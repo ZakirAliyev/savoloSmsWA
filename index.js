@@ -16,7 +16,7 @@ const AUTH_FOLDER = 'auth_info_baileys';
 const DB_FILE = 'messages.db';
 
 const API_HOST = process.env.API_HOST || '0.0.0.0';
-const API_PORT = Number(process.env.API_PORT || 3000);
+const API_PORT = Number(process.env.PORT || 3000);
 const API_KEY = process.env.API_KEY || 'savolo-secret-key';
 
 const RETRY_INTERVAL_SECONDS = 10;
@@ -819,7 +819,7 @@ function startApiServer() {
         });
     });
 
-    app.listen(API_PORT, API_HOST, () => {
+    app.listen(API_PORT, '0.0.0.0', () => {
         console.log('API server is running');
         console.log(`Local: http://localhost:${API_PORT}`);
         console.log(`Local 127: http://127.0.0.1:${API_PORT}`);
