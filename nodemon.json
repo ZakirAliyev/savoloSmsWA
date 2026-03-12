@@ -1,0 +1,6 @@
+{
+  "watch": ["index.js"],
+  "ext": "js,json",
+  "ignore": ["messages.db", "auth_info_baileys/*", "*.db"],
+  "exec": "node index.js"
+}

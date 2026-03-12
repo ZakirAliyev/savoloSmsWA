@@ -1,0 +1,24 @@
+{
+  "name": "whatsappsender",
+  "version": "1.0.0",
+  "description": "WhatsApp OTP sender API with SQLite queue",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "@hapi/boom": "^10.0.1",
+    "@whiskeysockets/baileys": "^7.0.0-rc.9",
+    "better-sqlite3": "^12.6.2",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "pino": "^10.1.0",
+    "qrcode-terminal": "^0.12.0",
+    "swagger-ui-express": "^5.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}
