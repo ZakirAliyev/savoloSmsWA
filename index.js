@@ -711,7 +711,7 @@ function startApiServer() {
         allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key']
     }));
 
-    app.options('*', cors());
+    app.options(/.*/, cors());
 
     app.use('/docs', swaggerUi.serve, (req, res, next) => {
         const swaggerSpec = buildSwaggerSpec(req);
