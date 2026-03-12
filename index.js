@@ -15,8 +15,8 @@ import { randomInt } from 'node:crypto';
 const AUTH_FOLDER = 'auth_info_baileys';
 const DB_FILE = 'messages.db';
 
-const API_HOST = '0.0.0.0';
-const API_PORT = Number(process.env.PORT || 3000);
+const API_HOST = process.env.API_HOST || '0.0.0.0';
+const API_PORT = Number(process.env.API_PORT || 3000);
 const API_KEY = process.env.API_KEY || 'savolo-secret-key';
 
 const RETRY_INTERVAL_SECONDS = 10;
@@ -420,9 +420,8 @@ function startQueueWorker() {
 }
 
 function buildSwaggerSpec(req) {
-    const forwardedProto = req.headers['x-forwarded-proto'];
-    const protocol = forwardedProto ? String(forwardedProto).split(',')[0] : req.protocol;
     const host = req.get('host');
+    const protocol = req.protocol;
     const serverUrl = `${protocol}://${host}`;
 
     return {
@@ -701,8 +700,6 @@ function startApiServer() {
 
     const app = express();
 
-    app.set('trust proxy', 1);
-
     app.use(express.json());
 
     app.use(cors({
@@ -824,122 +821,123 @@ function startApiServer() {
 
     app.listen(API_PORT, API_HOST, () => {
         console.log('API server is running');
-        console.log(`Port: ${API_PORT}`);
-        console.log(`Docs: /docs`);
+        console.log(`Local: http://localhost:${API_PORT}`);
+        console.log(`Local 127: http://127.0.0.1:${API_PORT}`);
+        console.log(`LAN: http://192.168.0.171:${API_PORT}`);
+        console.log(`Swagger Local: http://localhost:${API_PORT}/docs`);
+        console.log(`Swagger LAN: http://192.168.0.171:${API_PORT}/docs`);
         console.log('Protected endpoint API key header: x-api-key');
     });
 }
 
 async function startBot() {
-    try {
-        const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER);
-        const { version, isLatest } = await fetchLatestBaileysVersion();
+    const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER);
+    const { version, isLatest } = await fetchLatestBaileysVersion();
 
-        console.log(`Using WA Web version: ${version.join('.')}`);
-        console.log(`Is latest version: ${isLatest}`);
+    console.log(`Using WA Web version: ${version.join('.')}`);
+    console.log(`Is latest version: ${isLatest}`);
 
-        const sock = makeWASocket({
-            version,
-            auth: state,
-            logger: P({ level: 'silent' }),
-            browser: ['WhatsApp Sender', 'Chrome', '1.0.0'],
-            syncFullHistory: false,
-            markOnlineOnConnect: false
-        });
+    const sock = makeWASocket({
+        version,
+        auth: state,
+        logger: P({ level: 'silent' }),
+        browser: ['WhatsApp Sender', 'Chrome', '1.0.0'],
+        syncFullHistory: false,
+        markOnlineOnConnect: false
+    });
 
-        currentSock = sock;
+    currentSock = sock;
 
-        sock.ev.on('creds.update', saveCreds);
+    sock.ev.on('creds.update', saveCreds);
 
-        sock.ev.on('connection.update', async (update) => {
-            const { connection, lastDisconnect, qr } = update;
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect, qr } = update;
 
-            if (qr) {
-                console.log('Scan this QR with WhatsApp:');
-                qrcode.generate(qr, { small: true });
-            }
+        if (qr) {
+            console.log('Scan this QR with WhatsApp:');
+            qrcode.generate(qr, { small: true });
+        }
 
-            if (connection === 'connecting') {
-                isConnected = false;
-                console.log('Connecting to WhatsApp...');
-            }
+        if (connection === 'connecting') {
+            isConnected = false;
+            console.log('Connecting to WhatsApp...');
+        }
 
-            if (connection === 'open') {
-                isConnected = true;
-                console.log('Bot connected successfully');
-            }
+        if (connection === 'open') {
+            isConnected = true;
+            console.log('Bot connected successfully');
+        }
 
-            if (connection === 'close') {
-                isConnected = false;
+        if (connection === 'close') {
+            isConnected = false;
 
-                const statusCode = new Boom(lastDisconnect?.error)?.output?.statusCode;
-                const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+            const statusCode = new Boom(lastDisconnect?.error)?.output?.statusCode;
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
-                console.log('Connection closed');
-                console.log('Disconnect status code:', statusCode);
-                console.log('Should reconnect:', shouldReconnect);
+            console.log('Connection closed');
+            console.log('Disconnect status code:', statusCode);
+            console.log('Should reconnect:', shouldReconnect);
 
-                if (shouldReconnect) {
-                    setTimeout(() => {
-                        startBot().catch((err) => {
-                            console.error('Reconnect failed:', err?.message || err);
-                        });
-                    }, 3000);
-                } else {
-                    console.log('Logged out. Delete auth_info_baileys folder and scan again.');
-                }
-            }
-        });
-
-        sock.ev.on('messages.upsert', async ({ messages, type }) => {
-            if (type !== 'notify') return;
-            if (!messages || messages.length === 0) return;
-
-            const msg = messages[0];
-            if (!msg.message) return;
-            if (msg.key.fromMe) return;
-
-            const jid = msg.key.remoteJid;
-            if (!jid) return;
-            if (jid === 'status@broadcast') return;
-
-            const text = getMessageText(msg.message).trim();
-            const lowerText = text.toLowerCase();
-
-            console.log('\nIncoming message from:', jid);
-            console.log('Message text:', text || '[non-text message]');
-
-            try {
-                if (lowerText === 'hello') {
-                    await sock.sendMessage(jid, { text: 'Hello world!' });
-                    return;
-                }
-
-                if (lowerText === 'ping') {
-                    await sock.sendMessage(jid, { text: 'pong' });
-                    return;
-                }
-
-                if (lowerText === 'menu') {
-                    await sock.sendMessage(jid, {
-                        text: 'Commands:\nhello\nping\nmenu'
+            if (shouldReconnect) {
+                setTimeout(() => {
+                    startBot().catch((err) => {
+                        console.error('Reconnect failed:', err?.message || err);
                     });
-                    return;
-                }
-            } catch (error) {
-                console.error('Failed to handle incoming message:', error?.message || error);
+                }, 3000);
+            } else {
+                console.log('Logged out. Delete auth_info_baileys folder and scan again.');
             }
-        });
+        }
+    });
 
-        startQueueWorker();
+    sock.ev.on('messages.upsert', async ({ messages, type }) => {
+        if (type !== 'notify') return;
+        if (!messages || messages.length === 0) return;
 
-        return sock;
-    } catch (error) {
-        console.error('Bot startup failed:', error?.message || error);
-        return null;
-    }
+        const msg = messages[0];
+        if (!msg.message) return;
+        if (msg.key.fromMe) return;
+
+        const jid = msg.key.remoteJid;
+        if (!jid) return;
+        if (jid === 'status@broadcast') return;
+
+        const text = getMessageText(msg.message).trim();
+        const lowerText = text.toLowerCase();
+
+        console.log('\nIncoming message from:', jid);
+        console.log('Message text:', text || '[non-text message]');
+
+        try {
+            if (lowerText === 'hello') {
+                await sock.sendMessage(jid, { text: 'Hello world!' });
+                return;
+            }
+
+            if (lowerText === 'ping') {
+                await sock.sendMessage(jid, { text: 'pong' });
+                return;
+            }
+
+            if (lowerText === 'menu') {
+                await sock.sendMessage(jid, {
+                    text: 'Commands:\nhello\nping\nmenu'
+                });
+                return;
+            }
+        } catch (error) {
+            console.error('Failed to handle incoming message:', error?.message || error);
+        }
+    });
+
+    startQueueWorker();
+    startApiServer();
+
+    return sock;
 }
 
 initDb();
-startApiServer();
-startBot();
+
+startBot().catch((error) => {
+    console.error('Bot startup failed:', error?.message || error);
+});
