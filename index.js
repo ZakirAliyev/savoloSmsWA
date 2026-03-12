@@ -16,7 +16,7 @@ const AUTH_FOLDER = 'auth_info_baileys';
 const DB_FILE = 'messages.db';
 
 const API_HOST = process.env.API_HOST || '0.0.0.0';
-const API_PORT = Number(process.env.API_PORT || 3000);
+const API_PORT = Number(process.env.PORT || process.env.API_PORT || 3000);
 const API_KEY = process.env.API_KEY || 'savolo-secret-key';
 
 const RETRY_INTERVAL_SECONDS = 10;
@@ -421,7 +421,8 @@ function startQueueWorker() {
 
 function buildSwaggerSpec(req) {
     const host = req.get('host');
-    const protocol = req.protocol;
+    const forwardedProto = req.get('x-forwarded-proto');
+    const protocol = forwardedProto || req.protocol || 'https';
     const serverUrl = `${protocol}://${host}`;
 
     return {
@@ -700,6 +701,8 @@ function startApiServer() {
 
     const app = express();
 
+    app.set('trust proxy', true);
+
     app.use(express.json());
 
     app.use(cors({
@@ -708,7 +711,7 @@ function startApiServer() {
         allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key']
     }));
 
-    app.options(/.*/, cors());
+    app.options('*', cors());
 
     app.use('/docs', swaggerUi.serve, (req, res, next) => {
         const swaggerSpec = buildSwaggerSpec(req);
