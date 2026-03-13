@@ -412,7 +412,7 @@ function startQueueWorker() {
 
 function buildSwaggerSpec(req) {
     const host = req.get('host');
-    const serverUrl = `https://${host}`;
+    const serverUrl = `http://${host}`;
 
     return {
         openapi: '3.0.0',
