@@ -161,15 +161,7 @@ function getMessageText(message) {
     return '';
 }
 
-function generateOtpCode() {
-    return String(randomInt(100000, 1000000));
-}
-
-function buildOtpMessage(otpCode) {
-    return `Your Savolo verification code is ${otpCode}.`;
-}
-
-function insertQueuedOtpMessage(phoneInput) {
+function insertQueuedOtpMessage(phoneInput, otpCode) {
     const jid = normalizePhoneOrJid(phoneInput);
 
     if (!jid || !isValidNormalizedJid(jid)) {
@@ -177,8 +169,7 @@ function insertQueuedOtpMessage(phoneInput) {
     }
 
     const phone = jid.replace('@s.whatsapp.net', '');
-    const otpCode = generateOtpCode();
-    const messageText = buildOtpMessage(otpCode);
+    const messageText = `Your Savolo verification code is ${otpCode}.`;
     const now = nowSql();
 
     const stmt = db.prepare(`
@@ -456,11 +447,29 @@ function buildSwaggerSpec(req) {
                 },
                 SendOtpRequest: {
                     type: 'object',
-                    required: ['phone'],
+                    required: ['phone', 'otp'],
                     properties: {
                         phone: {
                             type: 'string',
                             example: '0772281148'
+                        },
+                        otp: {
+                            type: 'string',
+                            example: '482193'
+                        }
+                    }
+                },
+                SendMessageRequest: {
+                    type: 'object',
+                    required: ['phone', 'message'],
+                    properties: {
+                        phone: {
+                            type: 'string',
+                            example: '0772281148'
+                        },
+                        message: {
+                            type: 'string',
+                            example: 'Salam bu test mesajdır'
                         }
                     }
                 },
@@ -555,6 +564,59 @@ function buildSwaggerSpec(req) {
                                 'application/json': {
                                     schema: {
                                         $ref: '#/components/schemas/SendOtpResponse'
+                                    }
+                                }
+                            }
+                        },
+                        400: {
+                            description: 'Bad request',
+                            content: {
+                                'application/json': {
+                                    schema: {
+                                        $ref: '#/components/schemas/ErrorResponse'
+                                    }
+                                }
+                            }
+                        },
+                        401: {
+                            description: 'Unauthorized',
+                            content: {
+                                'application/json': {
+                                    schema: {
+                                        $ref: '#/components/schemas/ErrorResponse'
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            '/send-message': {
+                post: {
+                    summary: 'Queue custom WhatsApp message',
+                    tags: ['Messages'],
+                    security: [{ ApiKeyAuth: [] }],
+                    requestBody: {
+                        required: true,
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    $ref: '#/components/schemas/SendMessageRequest'
+                                }
+                            }
+                        }
+                    },
+                    responses: {
+                        201: {
+                            description: 'Message queued',
+                            content: {
+                                'application/json': {
+                                    schema: {
+                                        type: 'object',
+                                        properties: {
+                                            success: { type: 'boolean', example: true },
+                                            message: { type: 'string', example: 'Message queued successfully' }
+                                        }
                                     }
                                 }
                             }
@@ -732,16 +794,16 @@ function startApiServer() {
 
     app.post('/send-otp', apiKeyMiddleware, (req, res) => {
         try {
-            const { phone } = req.body ?? {};
+            const { phone, otp } = req.body ?? {};
 
-            if (!phone || !String(phone).trim()) {
+            if (!phone || !otp) {
                 return res.status(400).json({
                     success: false,
                     message: 'phone is required'
                 });
             }
 
-            const queued = insertQueuedOtpMessage(phone);
+            const queued = insertQueuedOtpMessage(phone, otp);
 
             return res.status(201).json({
                 success: true,
@@ -750,7 +812,7 @@ function startApiServer() {
                     id: queued.id,
                     phone: queued.phone,
                     jid: queued.jid,
-                    otpCode: queued.otpCode,
+                    otpCode: otp,
                     text: queued.messageText,
                     isSent: false
                 }
@@ -759,6 +821,75 @@ function startApiServer() {
             return res.status(400).json({
                 success: false,
                 message: error?.message || 'Failed to queue OTP'
+            });
+        }
+    });
+
+    app.post('/send-message', apiKeyMiddleware, (req, res) => {
+        try {
+            const { phone, message } = req.body ?? {};
+
+            if (!phone || !message) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'phone and message are required'
+                });
+            }
+
+            const jid = normalizePhoneOrJid(phone);
+
+            if (!jid || !isValidNormalizedJid(jid)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Phone number is not valid'
+                });
+            }
+
+            const phoneNormalized = jid.replace('@s.whatsapp.net', '');
+            const now = nowSql();
+
+            const stmt = db.prepare(`
+            INSERT INTO outgoing_messages (
+                phone,
+                jid,
+                message_text,
+                otp_code,
+                is_sent,
+                attempt_count,
+                last_error,
+                created_at,
+                updated_at,
+                sent_at,
+                next_retry_at
+            )
+            VALUES (?, ?, ?, NULL, 0, 0, NULL, ?, ?, NULL, ?)
+        `);
+
+            const result = stmt.run(
+                phoneNormalized,
+                jid,
+                message,
+                now,
+                now,
+                now
+            );
+
+            return res.status(201).json({
+                success: true,
+                message: 'Message queued successfully',
+                data: {
+                    id: Number(result.lastInsertRowid),
+                    phone: phoneNormalized,
+                    jid,
+                    text: message,
+                    isSent: false
+                }
+            });
+
+        } catch (error) {
+            return res.status(400).json({
+                success: false,
+                message: error?.message || 'Failed to queue message'
             });
         }
     });
